@@ -7,6 +7,8 @@ public:
   ~SimpleServer();
 
   int
+  check(const char* sockname);
+  int
   start(const char* sockname);
 
   int accept();

@@ -15,12 +15,25 @@
 #include <mutex>
 #include <thread>
 
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
+#include <vector>
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <stdlib.h>
+#include <stdio.h>
+
+
 #include <Minicap.hpp>
 
 #include "util/debug.h"
 #include "JpgEncoder.hpp"
 #include "SimpleServer.hpp"
 #include "Projection.hpp"
+
+
 
 #define BANNER_VERSION 1
 #define BANNER_SIZE 24
@@ -189,6 +202,51 @@ try_get_framebuffer_display_info(uint32_t displayId, Minicap::DisplayInfo* info)
 
 static FrameWaiter gWaiter;
 
+
+int getProcIdByName(std::string procName)
+{
+    int pid = -1;
+
+    // Open the /proc directory
+    DIR *dp = opendir("/proc");
+    if (dp != NULL)
+    {
+        // Enumerate all entries in directory until process found
+        struct dirent *dirp;
+        while (pid < 0 && (dirp = readdir(dp)))
+        {
+            // Skip non-numeric entries
+            int id = atoi(dirp->d_name);
+            if (id > 0)
+            {
+                // Read contents of virtual /proc/{pid}/cmdline file
+                std::string cmdPath = std::string("/proc/") + dirp->d_name + "/cmdline";
+                std::ifstream cmdFile(cmdPath.c_str());
+                std::string cmdLine;
+                getline(cmdFile, cmdLine);
+                if (!cmdLine.empty())
+                {
+                    // Keep first cmdline item which contains the program path
+                    size_t pos = cmdLine.find('\0');
+                    if (pos != std::string::npos)
+                        cmdLine = cmdLine.substr(0, pos);
+                    // Keep program name only, removing the path
+                    pos = cmdLine.rfind('/');
+                    if (pos != std::string::npos)
+                        cmdLine = cmdLine.substr(pos + 1);
+                    // Compare against requested process name
+                    if (procName == cmdLine)
+                        pid = id;
+                }
+            }
+        }
+    }
+
+    closedir(dp);
+
+    return pid;
+}
+
 static void
 signal_handler(int signum) {
   switch (signum) {
@@ -219,6 +277,21 @@ main(int argc, char* argv[]) {
   bool testOnly = false;
   Projection proj;
 
+  // Server config.
+  SimpleServer server;
+  std::cout << "RobusTest minicap is starting" << std::endl;
+  std::cout << "PID : " << getpid() << std::endl;
+  std::cerr << "PID: from getProcIdByName " << getProcIdByName("minicap")  << std::endl;
+  if (getpid() != getProcIdByName("minicap") ){
+    std::cout << "Unable to start minicap server on because minicap is already running " << std::endl;
+    // goto disaster;
+    return EXIT_FAILURE;
+  }
+  if (server.check(sockname) < 1) {
+    std::cout << "Unable to start minicap server on because already one server is running on minicap " << std::endl;
+    // goto disaster;
+    return EXIT_FAILURE;
+  }
   int opt;
   while ((opt = getopt(argc, argv, "d:n:P:Q:r:siSth")) != -1) {
     float frameRate;
@@ -336,7 +409,6 @@ main(int argc, char* argv[]) {
     std::cerr << "ERROR: missing or invalid -P" << std::endl;
     return EXIT_FAILURE;
   }
-
   std::cerr << "PID: " << getpid() << std::endl;
   std::cerr << "INFO: Using projection " << proj << std::endl;
 
@@ -360,8 +432,6 @@ main(int argc, char* argv[]) {
   Minicap::Frame frame;
   bool haveFrame = false;
 
-  // Server config.
-  SimpleServer server;
 
   // Set up minicap.
   Minicap* minicap = minicap_create(displayId);
@@ -555,3 +625,4 @@ disaster:
 
   return EXIT_FAILURE;
 }
+

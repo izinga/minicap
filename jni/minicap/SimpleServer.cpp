@@ -18,6 +18,29 @@ SimpleServer::~SimpleServer() {
 }
 
 int
+SimpleServer::check(const char* sockname) {
+  int sfd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+  if (sfd < 0) {
+    return sfd;
+  }
+
+  struct sockaddr_un addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(&addr.sun_path[1], sockname, strlen(sockname));
+
+  if (::bind(sfd, (struct sockaddr*) &addr,
+      sizeof(sa_family_t) + strlen(sockname) + 1) < 0) {
+    
+    return -1;
+  }
+
+  ::close(sfd);
+  return 10;
+}
+
+int
 SimpleServer::start(const char* sockname) {
   int sfd = socket(AF_UNIX, SOCK_STREAM, 0);
 
